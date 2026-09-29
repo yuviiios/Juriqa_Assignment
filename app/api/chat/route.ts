@@ -49,9 +49,10 @@ Question: ${question}
 
 Please answer the question using only the document provided, with exact quotes in [QUOTE] tags.`;
 
-    const message = await groq.chat.completions.create({
+    const stream = await groq.chat.completions.create({
       model: "mixtral-8x7b-32768",
       max_tokens: 2048,
+      stream: true,
       messages: [
         {
           role: "system",
@@ -64,13 +65,39 @@ Please answer the question using only the document provided, with exact quotes i
       ],
     });
 
-    const fullAnswer = message.choices[0]?.message?.content || "";
+    const encoder = new TextEncoder();
+    let fullText = "";
 
-    const quotes = extractAndVerifyQuotes(fullAnswer, doc.textContent);
+    const customStream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta?.content || "";
+            if (delta) {
+              fullText += delta;
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: delta })}\n\n`));
+            }
+          }
 
-    return NextResponse.json({
-      answer: fullAnswer,
-      quotes,
+          const quotes = extractAndVerifyQuotes(fullText, doc.textContent);
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ done: true, quotes })}\n\n`
+            )
+          );
+          controller.close();
+        } catch (err) {
+          controller.error(err);
+        }
+      },
+    });
+
+    return new NextResponse(customStream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
     });
   } catch (err) {
     console.error("Chat error:", err);

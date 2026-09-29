@@ -8,9 +8,15 @@ interface Document {
   uploadedAt: string;
 }
 
+interface Quote {
+  text: string;
+  verified: boolean;
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
+  quotes?: Quote[];
 }
 
 interface ChatInterfaceProps {
@@ -21,11 +27,13 @@ export default function ChatInterface({ document }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, streamingContent]);
 
   async function handleSend() {
     if (!input.trim()) return;
@@ -33,7 +41,11 @@ export default function ChatInterface({ document }: ChatInterfaceProps) {
     const userMessage = input;
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    setStreamingContent("");
     setLoading(true);
+
+    const controller = new AbortController();
+    setAbortController(controller);
 
     try {
       const res = await fetch("/api/chat", {
@@ -43,53 +55,138 @@ export default function ChatInterface({ document }: ChatInterfaceProps) {
           documentId: document.id,
           question: userMessage,
         }),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
         throw new Error("Chat request failed");
       }
 
-      const data = await res.json();
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let quotes: Quote[] = [];
+      let fullContent = "";
+
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = decoder.decode(value);
+        const lines = text.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const data = JSON.parse(line.slice(6));
+
+            if (data.token) {
+              fullContent += data.token;
+              setStreamingContent((prev) => prev + data.token);
+            }
+
+            if (data.done) {
+              quotes = data.quotes || [];
+            }
+          }
+        }
+      }
+
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: data.answer },
+        {
+          role: "assistant",
+          content: fullContent,
+          quotes,
+        },
       ]);
+      setStreamingContent("");
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "Error";
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Error: ${errMsg}` },
-      ]);
+      if (err instanceof Error && err.name !== "AbortError") {
+        const errMsg = err instanceof Error ? err.message : "Error";
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: `Error: ${errMsg}` },
+        ]);
+      }
     } finally {
       setLoading(false);
+      setAbortController(null);
+    }
+  }
+
+  function handleStop() {
+    if (abortController) {
+      abortController.abort();
+      if (streamingContent) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: streamingContent,
+            quotes: [],
+          },
+        ]);
+      }
+      setStreamingContent("");
+      setLoading(false);
+      setAbortController(null);
     }
   }
 
   return (
     <div className="flex flex-col h-[calc(100vh-200px)] bg-white rounded-lg shadow">
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {messages.length === 0 && (
+        {messages.length === 0 && !streamingContent && (
           <div className="text-center text-gray-500 mt-8">
             <p>Ask a question about the document</p>
           </div>
         )}
 
         {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
+          <div key={idx}>
             <div
-              className={`max-w-md px-4 py-2 rounded-lg ${
-                msg.role === "user"
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-100 text-gray-900"
-              }`}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              {msg.content}
+              <div
+                className={`max-w-2xl px-4 py-2 rounded-lg ${
+                  msg.role === "user"
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-900"
+                }`}
+              >
+                <div className="whitespace-pre-wrap">{msg.content}</div>
+              </div>
             </div>
+
+            {msg.quotes && msg.quotes.length > 0 && (
+              <div className="mt-2 ml-0 space-y-2">
+                {msg.quotes.map((quote, qIdx) => (
+                  <div
+                    key={qIdx}
+                    className={`text-sm p-3 rounded border-l-4 ${
+                      quote.verified
+                        ? "bg-green-50 border-green-400 text-green-900"
+                        : "bg-yellow-50 border-yellow-400 text-yellow-900"
+                    }`}
+                  >
+                    <div className="font-semibold">
+                      {quote.verified ? "✓ Verified" : "⚠ Unverified"}
+                    </div>
+                    <div className="mt-1 italic">&ldquo;{quote.text}&rdquo;</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
+
+        {streamingContent && (
+          <div className="flex justify-start">
+            <div className="max-w-2xl px-4 py-2 rounded-lg bg-gray-100 text-gray-900">
+              <div className="whitespace-pre-wrap">{streamingContent}</div>
+              <div className="mt-2 animate-pulse">▌</div>
+            </div>
+          </div>
+        )}
 
         <div ref={messagesEndRef} />
       </div>
@@ -100,18 +197,27 @@ export default function ChatInterface({ document }: ChatInterfaceProps) {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && handleSend()}
+            onKeyPress={(e) => e.key === "Enter" && !loading && handleSend()}
             placeholder="Ask a question..."
             disabled={loading}
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <button
-            onClick={handleSend}
-            disabled={loading || !input.trim()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition"
-          >
-            {loading ? "Sending..." : "Send"}
-          </button>
+          {loading ? (
+            <button
+              onClick={handleStop}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!input.trim()}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition"
+            >
+              Send
+            </button>
+          )}
         </div>
       </div>
     </div>
