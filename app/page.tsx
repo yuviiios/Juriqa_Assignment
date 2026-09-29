@@ -5,6 +5,8 @@ import DocumentUpload from "@/components/DocumentUpload";
 import DocumentLibrary from "@/components/DocumentLibrary";
 import ChatInterface from "@/components/ChatInterface";
 import PDFViewer from "@/components/PDFViewer";
+import MultiDocumentSelector from "@/components/MultiDocumentSelector";
+import MultiDocumentChat from "@/components/MultiDocumentChat";
 
 interface Document {
   id: string;
@@ -12,10 +14,13 @@ interface Document {
   uploadedAt: string;
 }
 
+type ViewMode = "library" | "chat" | "multi-chat" | "multi-select";
+
 export default function Home() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
-  const [view, setView] = useState<"library" | "chat">("library");
+  const [selectedDocs, setSelectedDocs] = useState<Document[]>([]);
+  const [view, setView] = useState<ViewMode>("library");
   const [highlightText, setHighlightText] = useState<string>("");
 
   useEffect(() => {
@@ -53,14 +58,24 @@ export default function Home() {
     setHighlightText(quote);
   }
 
+  function handleMultiSelect(docIds: string[]) {
+    const selected = documents.filter((d) => docIds.includes(d.id));
+    setSelectedDocs(selected);
+    setView("multi-chat");
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-full px-4 sm:px-6 lg:px-8 py-4">
           <h1 className="text-2xl font-bold text-gray-900">
-            {view === "library" ? "Contract Analyzer" : selectedDoc?.filename}
+            {view === "library"
+              ? "Contract Analyzer"
+              : view === "multi-chat"
+              ? "Compare Contracts"
+              : selectedDoc?.filename}
           </h1>
-          {view === "chat" && (
+          {(view === "chat" || view === "multi-chat") && (
             <button
               onClick={() => setView("library")}
               className="mt-2 text-sm text-blue-600 hover:text-blue-800"
@@ -75,10 +90,33 @@ export default function Home() {
         {view === "library" ? (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
             <DocumentUpload onUpload={handleUpload} />
-            <DocumentLibrary
-              documents={documents}
-              onSelect={handleSelectDoc}
-              onDelete={handleDeleteDoc}
+            <div className="flex gap-4 items-center">
+              <DocumentLibrary
+                documents={documents}
+                onSelect={handleSelectDoc}
+                onDelete={handleDeleteDoc}
+              />
+              {documents.length >= 2 && (
+                <button
+                  onClick={() => setView("multi-select")}
+                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition whitespace-nowrap"
+                >
+                  Compare Documents
+                </button>
+              )}
+            </div>
+          </div>
+        ) : view === "multi-select" ? (
+          <MultiDocumentSelector
+            documents={documents}
+            onSelect={handleMultiSelect}
+            onCancel={() => setView("library")}
+          />
+        ) : view === "multi-chat" ? (
+          <div className="p-4 h-full">
+            <MultiDocumentChat
+              documents={selectedDocs}
+              onBack={() => setView("library")}
             />
           </div>
         ) : selectedDoc ? (
