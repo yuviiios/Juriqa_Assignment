@@ -21,9 +21,10 @@ interface Message {
 
 interface ChatInterfaceProps {
   document: Document;
+  onQuoteClick?: (quote: string) => void;
 }
 
-export default function ChatInterface({ document }: ChatInterfaceProps) {
+export default function ChatInterface({ document, onQuoteClick }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -160,9 +161,10 @@ export default function ChatInterface({ document }: ChatInterfaceProps) {
             {msg.quotes && msg.quotes.length > 0 && (
               <div className="mt-2 ml-0 space-y-2">
                 {msg.quotes.map((quote, qIdx) => (
-                  <div
+                  <button
                     key={qIdx}
-                    className={`text-sm p-3 rounded border-l-4 ${
+                    onClick={() => onQuoteClick?.(quote.text)}
+                    className={`w-full text-left text-sm p-3 rounded border-l-4 cursor-pointer hover:opacity-80 transition ${
                       quote.verified
                         ? "bg-green-50 border-green-400 text-green-900"
                         : "bg-yellow-50 border-yellow-400 text-yellow-900"
@@ -172,7 +174,7 @@ export default function ChatInterface({ document }: ChatInterfaceProps) {
                       {quote.verified ? "✓ Verified" : "⚠ Unverified"}
                     </div>
                     <div className="mt-1 italic">&ldquo;{quote.text}&rdquo;</div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}

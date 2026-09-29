@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import DocumentUpload from "@/components/DocumentUpload";
 import DocumentLibrary from "@/components/DocumentLibrary";
 import ChatInterface from "@/components/ChatInterface";
+import PDFViewer from "@/components/PDFViewer";
 
 interface Document {
   id: string;
@@ -15,6 +16,7 @@ export default function Home() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [view, setView] = useState<"library" | "chat">("library");
+  const [highlightText, setHighlightText] = useState<string>("");
 
   useEffect(() => {
     loadDocuments();
@@ -47,10 +49,14 @@ export default function Home() {
     setView("chat");
   }
 
+  function handleQuoteClick(quote: string) {
+    setHighlightText(quote);
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-full px-4 sm:px-6 lg:px-8 py-4">
           <h1 className="text-2xl font-bold text-gray-900">
             {view === "library" ? "Contract Analyzer" : selectedDoc?.filename}
           </h1>
@@ -65,9 +71,9 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="flex-1 overflow-hidden">
         {view === "library" ? (
-          <div className="space-y-8">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
             <DocumentUpload onUpload={handleUpload} />
             <DocumentLibrary
               documents={documents}
@@ -76,7 +82,20 @@ export default function Home() {
             />
           </div>
         ) : selectedDoc ? (
-          <ChatInterface document={selectedDoc} />
+          <div className="flex h-full gap-4 p-4">
+            <div className="flex-1 min-w-0">
+              <PDFViewer
+                documentId={selectedDoc.id}
+                highlightText={highlightText}
+              />
+            </div>
+            <div className="w-96 min-w-0">
+              <ChatInterface
+                document={selectedDoc}
+                onQuoteClick={handleQuoteClick}
+              />
+            </div>
+          </div>
         ) : null}
       </main>
     </div>
