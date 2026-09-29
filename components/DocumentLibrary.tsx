@@ -20,7 +20,9 @@ export default function DocumentLibrary({
   if (documents.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow p-8 text-center">
-        <p className="text-gray-500">No documents uploaded yet</p>
+        <p className="text-4xl mb-3">📁</p>
+        <p className="text-gray-600 font-medium">No documents yet</p>
+        <p className="text-sm text-gray-500 mt-1">Upload a contract to get started</p>
       </div>
     );
   }

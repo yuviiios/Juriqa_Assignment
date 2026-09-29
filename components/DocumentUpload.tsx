@@ -54,9 +54,15 @@ export default function DocumentUpload({ onUpload }: DocumentUploadProps) {
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-xl font-semibold mb-4">Upload Document</h2>
+      <h2 className="text-xl font-semibold mb-4">📄 Upload Document</h2>
 
-      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition">
+      <div
+        className={`border-2 border-dashed rounded-lg p-8 text-center transition ${
+          loading
+            ? "border-blue-300 bg-blue-50"
+            : "border-gray-300 hover:border-gray-400"
+        }`}
+      >
         <input
           type="file"
           accept=".pdf,.docx"
@@ -66,16 +72,35 @@ export default function DocumentUpload({ onUpload }: DocumentUploadProps) {
           id="file-input"
         />
         <label htmlFor="file-input" className="cursor-pointer block">
-          <p className="text-gray-600">
-            {loading ? "Uploading..." : "Drag and drop or click to upload"}
-          </p>
-          <p className="text-sm text-gray-500 mt-1">PDF or DOCX only</p>
+          {loading ? (
+            <>
+              <div className="inline-block w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-2"></div>
+              <p className="text-blue-600 font-medium">Uploading...</p>
+            </>
+          ) : (
+            <>
+              <p className="text-2xl mb-2">📤</p>
+              <p className="text-gray-700 font-medium">
+                Drag and drop or click to upload
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                PDF or DOCX (max 50MB)
+              </p>
+            </>
+          )}
         </label>
       </div>
 
       {error && (
-        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded text-red-800">
-          {error}
+        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded">
+          <p className="text-red-800 font-semibold">Upload failed</p>
+          <p className="text-red-700 text-sm mt-1">{error}</p>
+          <button
+            onClick={() => setError(null)}
+            className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+          >
+            Dismiss
+          </button>
         </div>
       )}
     </div>

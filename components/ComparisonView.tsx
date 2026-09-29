@@ -131,7 +131,12 @@ export default function ComparisonView({ doc1, doc2, onBack }: ComparisonViewPro
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        {loading && <div className="text-center text-gray-500 py-8">Analyzing documents...</div>}
+        {loading && (
+          <div className="text-center py-8">
+            <div className="w-12 h-12 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin mx-auto mb-3"></div>
+            <p className="text-gray-600">Analyzing documents for differences...</p>
+          </div>
+        )}
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded text-red-800">
             Error: {error}
