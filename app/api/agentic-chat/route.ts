@@ -4,6 +4,58 @@ import { verifyQuote } from "@/lib/quoteVerification";
 import { executeToolCall } from "@/lib/agentTools";
 import Groq from "groq-sdk";
 
+const MODEL = "openai/gpt-oss-20b";
+const MAX_ROUNDS = 5;
+
+// Names must match the cases in executeToolCall.
+const AGENT_TOOLS: Groq.Chat.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "search_document",
+      description:
+        "Search the document for lines matching a query. Returns up to 5 matching lines.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Text or phrase to search for",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_section",
+      description:
+        "Get the text of one numbered section of the document, truncated to 2000 characters.",
+      parameters: {
+        type: "object",
+        properties: {
+          section_number: {
+            type: "integer",
+            description: "1-based section number",
+          },
+        },
+        required: ["section_number"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_clauses",
+      description:
+        "List which standard legal clauses (termination, liability, governing law, etc.) appear in the document.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+];
+
 export async function POST(request: NextRequest) {
   try {
     const { documentId, question } = await request.json();
@@ -31,12 +83,7 @@ export async function POST(request: NextRequest) {
     const customStream = new ReadableStream({
       async start(controller) {
         try {
-          const systemPrompt = `You are a legal document research assistant. You have access to tools to search and analyze a document.
-
-Available tools:
-1. search_document(query: string) - Search for text matching a query
-2. get_section(section_number: int) - Get a specific section of the document
-3. list_clauses() - List all identified clauses in the document
+          const systemPrompt = `You are a legal document research assistant. You have tools to search and analyze a document.
 
 When answering questions:
 1. Use the tools to research the document thoroughly
@@ -44,142 +91,109 @@ When answering questions:
 3. After gathering information, provide a comprehensive answer with quotes from the document
 4. Format quotes as [QUOTE]exact text[/QUOTE]
 
-You have a maximum of 5 tool calls. Use them wisely.`;
+You have a maximum of ${MAX_ROUNDS} research rounds. Use them wisely.`;
 
           const messages: any[] = [
-            {
-              role: "user",
-              content: systemPrompt + "\n\nNow, answer this question: " + question,
-            },
+            { role: "system", content: systemPrompt },
+            { role: "user", content: question },
           ];
 
-          let roundCount = 0;
-          const maxRounds = 5;
-          let toolsUsed = 0;
+          const sendAnswer = (answer: string) => {
+            const quotes = extractAndVerifyQuotes(answer, doc.textContent);
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ answer })}\n\n`)
+            );
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ done: true, quotes })}\n\n`)
+            );
+          };
 
-          while (roundCount < maxRounds) {
-            roundCount++;
+          let answered = false;
 
+          for (let round = 0; round < MAX_ROUNDS && !answered; round++) {
             const response = await groq.chat.completions.create({
-              model: "mixtral-8x7b-32768",
+              model: MODEL,
               max_tokens: 2048,
-              messages: messages,
+              messages,
+              tools: AGENT_TOOLS,
+              tool_choice: "auto",
             });
 
-            const assistantMessage = response.choices[0]?.message?.content || "";
+            const message = response.choices[0]?.message;
+            if (!message) break;
 
-            if (!assistantMessage) {
+            const toolCalls = message.tool_calls ?? [];
+
+            if (toolCalls.length === 0) {
+              sendAnswer(message.content?.trim() || "");
+              answered = true;
               break;
             }
 
-            const toolCallRegex = /\[TOOL\]([\s\S]*?)\[\/TOOL\]/g;
-            let toolCallMatch;
-            let hasToolCalls = false;
-            const toolResults: string[] = [];
+            // The assistant turn carrying tool_calls must precede the tool
+            // results, and every call needs a matching tool message or the
+            // next request is rejected.
+            messages.push(message);
 
-            while ((toolCallMatch = toolCallRegex.exec(assistantMessage)) !== null) {
-              hasToolCalls = true;
-              toolsUsed++;
+            for (const call of toolCalls) {
+              const toolName = call.function.name.toLowerCase();
 
-              if (toolsUsed > 5) {
-                break;
-              }
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    progress: `Executing ${toolName}...`,
+                  })}\n\n`
+                )
+              );
 
-              const toolCall = toolCallMatch[1].trim();
-
+              let args: Record<string, unknown> = {};
+              let parseError = "";
               try {
-                const toolMatch = toolCall.match(/^(\w+)\((.+)\)$/);
-                if (!toolMatch) {
-                  toolResults.push(`Invalid tool call format: ${toolCall}`);
-                  continue;
-                }
-
-                const [, toolName, argsStr] = toolMatch;
-                const args = JSON.parse(argsStr);
-
-                const toolName_lower = toolName.toLowerCase();
-                const validTools = [
-                  "search_document",
-                  "get_section",
-                  "list_clauses",
-                ];
-
-                if (!validTools.includes(toolName_lower)) {
-                  toolResults.push(`Unknown tool: ${toolName}`);
-                  continue;
-                }
-
-                controller.enqueue(
-                  encoder.encode(
-                    `data: ${JSON.stringify({
-                      progress: `Executing ${toolName}...`,
-                    })}\n\n`
-                  )
-                );
-
-                const result = executeToolCall(toolName_lower, args, doc.textContent);
-                toolResults.push(`${result.toolName}: ${result.result}`);
+                args = call.function.arguments
+                  ? JSON.parse(call.function.arguments)
+                  : {};
               } catch (err) {
-                const errMsg =
-                  err instanceof Error ? err.message : "Parse error";
-                toolResults.push(`Tool error: ${errMsg}`);
+                parseError =
+                  err instanceof Error ? err.message : "argument parse error";
               }
+
+              const content = parseError
+                ? `Could not parse arguments: ${parseError}`
+                : executeToolCall(toolName, args, doc.textContent).result;
+
+              messages.push({
+                role: "tool",
+                tool_call_id: call.id,
+                content,
+              });
             }
-
-            if (!hasToolCalls) {
-              const quotes = extractAndVerifyQuotes(assistantMessage, doc.textContent);
-              const cleanAnswer = assistantMessage
-                .replace(/\[TOOL\][\s\S]*?\[\/TOOL\]/g, "")
-                .trim();
-
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    answer: cleanAnswer,
-                  })}\n\n`
-                )
-              );
-
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    done: true,
-                    quotes,
-                  })}\n\n`
-                )
-              );
-
-              break;
-            }
-
-            messages.push({
-              role: "assistant",
-              content: assistantMessage,
-            });
-
-            messages.push({
-              role: "user",
-              content: `Tool results:\n${toolResults.join("\n")}`,
-            });
           }
 
-          if (roundCount >= maxRounds) {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  answer:
-                    "Maximum research rounds reached. Based on my search:\n\n(Please see above for findings)",
-                })}\n\n`
-              )
-            );
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  done: true,
-                  quotes: [],
-                })}\n\n`
-              )
-            );
+          if (!answered) {
+            // Rounds exhausted mid-research. Ask for a final answer with the
+            // tools closed off rather than emitting a placeholder.
+            try {
+              messages.push({
+                role: "user",
+                content:
+                  "Research budget reached. Do not call any more tools. Answer now using what you have gathered, with [QUOTE] tags.",
+              });
+
+              const final = await groq.chat.completions.create({
+                model: MODEL,
+                max_tokens: 2048,
+                messages,
+                tools: AGENT_TOOLS,
+                tool_choice: "none",
+              });
+
+              sendAnswer(final.choices[0]?.message?.content?.trim() || "");
+            } catch (err) {
+              console.error("Final answer call failed:", err);
+              sendAnswer(
+                "I reached the research limit before reaching a conclusion. Please narrow the question and try again."
+              );
+            }
           }
 
           controller.close();

@@ -11,3 +11,4 @@ build/
 .turbo
 out/
 .cache/
+public/pdf.worker.min.mjs

@@ -61,7 +61,7 @@ Question: ${question}
 Provide a comparison using quotes from the documents.`;
 
     const stream = await groq.chat.completions.create({
-      model: "mixtral-8x7b-32768",
+      model: "openai/gpt-oss-20b",
       max_tokens: 2048,
       stream: true,
       messages: [
