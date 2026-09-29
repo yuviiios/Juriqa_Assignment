@@ -9,6 +9,7 @@ import MultiDocumentSelector from "@/components/MultiDocumentSelector";
 import MultiDocumentChat from "@/components/MultiDocumentChat";
 import ComparisonSelector from "@/components/ComparisonSelector";
 import ComparisonView from "@/components/ComparisonView";
+import AgenticChat from "@/components/AgenticChat";
 
 interface Document {
   id: string;
@@ -16,7 +17,7 @@ interface Document {
   uploadedAt: string;
 }
 
-type ViewMode = "library" | "chat" | "multi-chat" | "multi-select" | "compare-select" | "comparing";
+type ViewMode = "library" | "chat" | "agentic-chat" | "multi-chat" | "multi-select" | "compare-select" | "comparing";
 
 export default function Home() {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -55,9 +56,9 @@ export default function Home() {
     }
   }
 
-  function handleSelectDoc(doc: Document) {
+  function handleSelectDoc(doc: Document, mode: "chat" | "agentic" = "chat") {
     setSelectedDoc(doc);
-    setView("chat");
+    setView(mode === "agentic" ? "agentic-chat" : "chat");
   }
 
   function handleQuoteClick(quote: string) {
@@ -86,13 +87,15 @@ export default function Home() {
           <h1 className="text-2xl font-bold text-gray-900">
             {view === "library"
               ? "Contract Analyzer"
+              : view === "agentic-chat"
+              ? "Agentic Research: " + selectedDoc?.filename
               : view === "multi-chat"
               ? "Compare Contracts (Q&A)"
               : view === "comparing"
               ? "Compare Contracts (Diff)"
               : selectedDoc?.filename}
           </h1>
-          {(view === "chat" || view === "multi-chat" || view === "comparing") && (
+          {(view === "chat" || view === "agentic-chat" || view === "multi-chat" || view === "comparing") && (
             <button
               onClick={() => setView("library")}
               className="mt-2 text-sm text-blue-600 hover:text-blue-800"
@@ -108,12 +111,24 @@ export default function Home() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
             <DocumentUpload onUpload={handleUpload} />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2">
+              <div className="md:col-span-2 space-y-4">
                 <DocumentLibrary
                   documents={documents}
-                  onSelect={handleSelectDoc}
+                  onSelect={(doc) => handleSelectDoc(doc, "chat")}
                   onDelete={handleDeleteDoc}
                 />
+                {documents.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (documents.length > 0) {
+                        handleSelectDoc(documents[0], "agentic");
+                      }
+                    }}
+                    className="w-full px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+                  >
+                    🔬 Agentic Research (Select doc first)
+                  </button>
+                )}
               </div>
               {documents.length >= 2 && (
                 <div className="space-y-4">
@@ -145,6 +160,12 @@ export default function Home() {
             onCompare={handleCompare}
             onCancel={() => setView("library")}
           />
+        ) : view === "agentic-chat" && selectedDoc ? (
+          <div className="flex h-full gap-4 p-4">
+            <div className="flex-1 min-w-0">
+              <AgenticChat document={selectedDoc} />
+            </div>
+          </div>
         ) : view === "multi-chat" ? (
           <div className="p-4 h-full">
             <MultiDocumentChat
