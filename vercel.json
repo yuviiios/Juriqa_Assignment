@@ -1,7 +1,4 @@
 {
-  "env": {
-    "GROQ_API_KEY": "@groq_api_key"
-  },
   "buildCommand": "npm run build",
   "outputDirectory": ".next"
 }
