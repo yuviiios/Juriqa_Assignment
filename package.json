@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "sync-pdf-worker": "node -e \"require('fs').copyFileSync(require.resolve('pdfjs-dist/build/pdf.worker.min.mjs'), 'public/pdf.worker.min.mjs')\"",
+    "sync-pdf-worker": "node -e \"const fs=require('fs');const path=require('path');fs.mkdirSync('public',{recursive:true});fs.copyFileSync(require.resolve('pdfjs-dist/build/pdf.worker.min.mjs'),'public/pdf.worker.min.mjs')\"",
     "dev": "npm run sync-pdf-worker && next dev",
     "build": "npm run sync-pdf-worker && next build",
     "start": "next start",
