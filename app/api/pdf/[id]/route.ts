@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDocument } from "@/lib/storage";
+import { getDocument, UPLOADS_DIR } from "@/lib/storage";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -17,11 +17,7 @@ export async function GET(
       );
     }
 
-    const filepath = path.join(
-      process.cwd(),
-      "data/uploads",
-      doc.filename
-    );
+    const filepath = path.join(UPLOADS_DIR, doc.filename);
 
     const buffer = await fs.readFile(filepath);
 

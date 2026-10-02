@@ -1,8 +1,11 @@
 import { promises as fs } from "fs";
 import path from "path";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
+// Vercel's filesystem is read-only except /tmp
+const DATA_DIR = process.env.VERCEL
+  ? "/tmp/data"
+  : path.join(process.cwd(), "data");
+export const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const METADATA_DIR = path.join(DATA_DIR, "metadata");
 
 export interface DocumentMetadata {
